@@ -1,0 +1,9 @@
+# Generated per run by run-eval.sh: fake home, workdir, sibling, results.txt,
+# spot-list.txt, and results-clean.txt written by the report generator
+rig/
+
+# Local deletion target: files move here instead of being removed
+.trash/
+
+# macOS
+.DS_Store
