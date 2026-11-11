@@ -1,0 +1,64 @@
+;; Rules load after the generated grants, and later rules win.
+;; The allow block comes first, so every deny below it wins.
+
+;; Host tooling: read to understand the machine, never to change it.
+(allow file-read*
+  (home-subpath "/.config/opencode")
+  (home-subpath "/.agents")
+  (home-subpath "/.config/git")
+  (home-subpath "/.config/agent-safehouse")
+)
+
+;; Env files at any depth: .env, .env.local, .env.production, .envrc.
+;; In the project, in a temp dir, or inside an agent config directory.
+(deny file-read* file-write* (regex #"^/(.*/)?\.env[^/]*$"))
+
+;; OpenCode keeps tokens in auth.json, and its profile grants the data dir.
+;; This deny wins over that grant. Log in outside the sandbox.
+(deny file-read* file-write* (home-literal "/.local/share/opencode/auth.json"))
+
+;; Session history carries pastes from earlier sessions. The agent appends
+;; to it all day, so the write stays and the read goes.
+(deny file-read* (home-prefix "/.local/share/opencode/opencode.db"))
+
+;; Other agents' homes. Default policy already closes them; these lines keep
+;; them closed when a future --add-dirs or wide-read grant reopens home.
+(deny file-read* (home-subpath "/.claude"))
+(deny file-read* (home-literal "/.claude.json"))
+(deny file-read* (home-subpath "/.codex"))
+(deny file-read* (home-subpath "/.cursor"))
+(deny file-read* (home-subpath "/.gemini"))
+
+;; Token files that live outside agent directories.
+(deny file-read* (home-literal "/.netrc"))
+(deny file-read* (home-literal "/.git-credentials"))
+(deny file-read* (home-literal "/.npmrc"))
+(deny file-read* (home-subpath "/.aws"))
+(deny file-read* (home-subpath "/.kube"))
+(deny file-read* (home-subpath "/.config/gh"))
+(deny file-read* (home-subpath "/.config/github-copilot"))
+
+;; Project secrets stay unreadable even though the workdir is writable.
+(deny file-read* file-write* (workdir-subpath "/secrets"))
+(deny file-read* (workdir-subpath "/.certs"))
+
+;; Network closed. This section flips the order: deny first, allows after,
+;; and later rules win. Two Seatbelt facts learned by experiment:
+;; - An UNFILTERED deny (deny network*) appended after the generated
+;;   (allow network-outbound (remote ip)) is inert; a FILTERED deny wins.
+;; - The ip filter takes only * or localhost as host and ignores the port,
+;;   so per-host egress is not expressible. The tcp filter matches TCP by
+;;   port; ICMP and UDP are excluded from it.
+;; KNOWN LIMITATION (safehouse 0.13.0): the generated 20-network.sb emits a
+;; blanket (allow network-outbound (remote ip)) that dominates every rule
+;; appended after it, deny or allow - verified with sandbox-exec directly.
+;; Until Safehouse scopes that allow, the rules below compile but do not
+;; restrict egress. The eval records the actual posture.
+(deny network* (remote ip "*:*"))
+
+;; DNS. Nothing resolves without the system resolver.
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+
+;; TLS egress on port 443 only. Plaintext ports, ICMP, QUIC, and
+;; direct-IP DNS bypasses (dig @8.8.8.8) stay denied.
+(allow network-outbound (remote tcp "*:443"))
