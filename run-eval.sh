@@ -137,7 +137,8 @@ echo "policy compiles, HOME_DIR renders as the fake home. OK"
 
 banner "host-side baselines (checked again after the run)"
 MARKER_BEFORE="$(defaults read com.apple.dock sbx-eval-marker 2>&1)"
-CRON_BEFORE="$(crontab -l 2>&1)"
+CRON_BEFORE="$(crontab -l 2>/dev/null)"; CRON_BEFORE_RC=$?
+GIT_NAME_BEFORE="$(git config --global user.name 2>/dev/null)"; GIT_NAME_BEFORE_RC=$?
 echo "defaults marker: ${MARKER_BEFORE:0:40}"
 
 banner "run battery inside safehouse"
@@ -161,8 +162,10 @@ BATTERY_RC=$?
 
 # Rewrite the runner's paths out of the raw results in place: package prefix
 # stripped, real home folded into ~. Everything downstream (console dump,
-# report) reads the sanitized file.
-perl -pi -e "s|\Q$PKG\E/||g; s|\Q$HOME\E|~|g" "$RESULTS"
+# report) reads the sanitized file. Paths pass via ENV so nothing is
+# interpolated into the perl program; braces as delimiters are the
+# pathological-only edge.
+PKG="$PKG" RH="$HOME" perl -pi -e 's{\Q$ENV{PKG}\E/}{}g; s{\Q$ENV{RH}\E}{~}g' "$RESULTS"
 
 banner "host-side escape checks"
 ARTIFACT_FAIL=0
@@ -179,10 +182,39 @@ for stolen in "$WORK"/stolen* "$WORK"/link.key; do
   fi
 done
 MARKER_AFTER="$(defaults read com.apple.dock sbx-eval-marker 2>&1)"
+CRON_AFTER="$(crontab -l 2>/dev/null)"; CRON_AFTER_RC=$?
+GIT_NAME_AFTER="$(git config --global user.name 2>/dev/null)"; GIT_NAME_AFTER_RC=$?
 [ "$MARKER_BEFORE" = "$MARKER_AFTER" ] || { echo "PREFERENCES WRITE LANDED ON HOST (defaults)"; ARTIFACT_FAIL=1; }
-CRON_AFTER="$(crontab -l 2>&1)"
-[ "$CRON_BEFORE" = "$CRON_AFTER" ] || { echo "CRONTAB CHANGED BY SANDBOX"; ARTIFACT_FAIL=1; }
+[ "$CRON_BEFORE" = "$CRON_AFTER" ] && [ "$CRON_BEFORE_RC" = "$CRON_AFTER_RC" ] \
+  || { echo "CRONTAB CHANGED BY SANDBOX"; ARTIFACT_FAIL=1; }
+[ "$GIT_NAME_BEFORE" = "$GIT_NAME_AFTER" ] && [ "$GIT_NAME_BEFORE_RC" = "$GIT_NAME_AFTER_RC" ] \
+  || { echo "GIT CONFIG CHANGED BY SANDBOX"; ARTIFACT_FAIL=1; }
 [ "$ARTIFACT_FAIL" -eq 0 ] && echo "no escape artifacts, host state unchanged"
+
+# The eval pokes the host on purpose; a sandbox regression must not leave
+# changes behind. Restore whatever a tripped check observed.
+if [ "$ARTIFACT_FAIL" -eq 1 ]; then
+  launchctl remove sbx-escape 2>/dev/null
+  if [ "$MARKER_BEFORE" != "$MARKER_AFTER" ]; then
+    defaults delete com.apple.dock sbx-eval 2>/dev/null
+    defaults delete com.apple.dock sbx-eval-marker 2>/dev/null
+  fi
+  if [ "$CRON_BEFORE" != "$CRON_AFTER" ] || [ "$CRON_BEFORE_RC" != "$CRON_AFTER_RC" ]; then
+    if [ "$CRON_BEFORE_RC" -eq 0 ]; then
+      printf '%s\n' "$CRON_BEFORE" | crontab -
+    else
+      crontab -r 2>/dev/null
+    fi
+  fi
+  if [ "$GIT_NAME_BEFORE" != "$GIT_NAME_AFTER" ] || [ "$GIT_NAME_BEFORE_RC" != "$GIT_NAME_AFTER_RC" ]; then
+    if [ "$GIT_NAME_BEFORE_RC" -eq 0 ]; then
+      git config --global user.name "$GIT_NAME_BEFORE"
+    else
+      git config --global --unset user.name 2>/dev/null
+    fi
+  fi
+  echo "host state restored"
+fi
 
 banner "verdict"
 REPORT="$REPORTS/eval-report-$SAFEHOUSE_VERSION.csv"
