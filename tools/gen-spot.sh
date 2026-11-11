@@ -9,6 +9,12 @@ FH="$1"; WORK="$2"; SIBLING="$3"; OUT="$4"
 : > "$OUT"
 
 add() { # expect op prefix path  (max 2 per expect+op+prefix)
+  # Filenames are attacker-shaped data at the parsing boundary of the
+  # battery: pipes, quotes, and newlines break the "expect|op|path" split.
+  # The sampled trees are root-owned, so this is hardening, not a live hole.
+  case "$4" in
+    *'|'*|*$'\n'*|*'"'*|*"'"*) return ;;
+  esac
   local key="$1|$2|$3"
   [ "$(grep -cF "$key" "$OUT" 2>/dev/null)" -ge 2 ] && return
   echo "$1|$2|$4" >> "$OUT"
@@ -67,9 +73,11 @@ find "/Library/Application Support" -maxdepth 2 2>/dev/null | while IFS= read -r
   echo "deny|$p"
 done | tree_rules "/Library/Application Support/"
 
-# Sibling repo and workdir-adjacent trees (two unique signals, one probe each).
-add deny cat "$SIBLING/" "$SIBLING/file.txt"
-add deny ls "$SIBLING/" "$SIBLING"
+# Sibling repo and workdir-adjacent trees (two unique signals, one probe
+# each). Paths are relative to the workdir, the sandbox cwd, so the list
+# never carries the runner's home path; the kernel resolves the same files.
+add deny cat "$SIBLING/" "../sibling/file.txt"
+add deny ls "$SIBLING/" "../sibling"
 
 # /Users: listing is allowed, contents are not.
 add nodata ls "/Users" "/Users"

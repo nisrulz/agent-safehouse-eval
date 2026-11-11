@@ -6,10 +6,11 @@ RESULTS="$1"; REPORT="$2"; SVER="${3:-unknown}"; RIG="${4:-rig}"
 
 # Never emit the runner's username: strip the package path prefix from probe
 # output, then fold the real home into ~. Applied again here so the report
-# stays clean even when fed raw, unsanitized results.
+# stays clean even when fed raw, unsanitized results. Paths pass via ENV so
+# nothing is interpolated into the perl program.
 PKG="$(dirname "$RIG")"
 CLEAN="$RIG/results-clean.txt"
-perl -pe "s|\Q$PKG\E/||g; s|\Q$HOME\E|~|g" "$RESULTS" > "$CLEAN"
+PKG="$PKG" RH="$HOME" perl -pe 's{\Q$ENV{PKG}\E/}{}g; s{\Q$ENV{RH}\E}{~}g' "$RESULTS" > "$CLEAN"
 RESULTS="$CLEAN"
 
 # grep -c prints its own 0 on no matches; empty only when the file is missing.
@@ -20,11 +21,13 @@ ANY=$(grep '^P' "$RESULTS" | grep -c 'ANY' || true); ANY="${ANY:-0}"
 
 {
   printf 'check,result,observed\n'
-  grep '^P' "$RESULTS" | awk -F'\t' '{
-    c = $8; o = $7
-    gsub(/"/, "\"\"", c)
-    gsub(/"/, "\"\"", o)
-    printf "\"%s\",%s,\"%s\"\n", c, $6, o
-  }'
+  grep '^P' "$RESULTS" | awk -F'\t' '
+    function safe(s) { return (s ~ /^[=+@-]/) ? sprintf("%c", 39) s : s }
+    {
+      c = safe($8); o = safe($7)
+      gsub(/"/, "\"\"", c)
+      gsub(/"/, "\"\"", o)
+      printf "\"%s\",%s,\"%s\"\n", c, $6, o
+    }'
 } > "$REPORT"
 echo "report written: ${REPORT#"$PKG"/} (probes: $TOTAL, pass: $PASS, fail: $FAIL, any: $ANY)"
