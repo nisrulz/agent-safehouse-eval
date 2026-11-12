@@ -42,23 +42,27 @@
 (deny file-read* file-write* (workdir-subpath "/secrets"))
 (deny file-read* (workdir-subpath "/.certs"))
 
-;; Network closed. This section flips the order: deny first, allows after,
-;; and later rules win. Two Seatbelt facts learned by experiment:
-;; - An UNFILTERED deny (deny network*) appended after the generated
-;;   (allow network-outbound (remote ip)) is inert; a FILTERED deny wins.
-;; - The ip filter takes only * or localhost as host and ignores the port,
-;;   so per-host egress is not expressible. The tcp filter matches TCP by
+;; Network closed, then reopened by name. Deny first, allows after: a later
+;; matching rule wins.
+;; One rule per operation. Each of these takes effect against the generated
+;; 20-network.sb allow, which is why the section is written this way.
+;; Measured on macOS 27.2.1 with safehouse 0.13.0 and 0.13.1:
+;; - The ip filter takes only * or localhost as host, so egress is scoped by
+;;   port and protocol, not by remote host. The tcp filter matches TCP by
 ;;   port; ICMP and UDP are excluded from it.
-;; KNOWN LIMITATION (safehouse 0.13.0): the generated 20-network.sb emits a
-;; blanket (allow network-outbound (remote ip)) that dominates every rule
-;; appended after it, deny or allow - verified with sandbox-exec directly.
-;; Until Safehouse scopes that allow, the rules below compile but do not
-;; restrict egress. The eval records the actual posture.
-(deny network* (remote ip "*:*"))
+(deny network-outbound (remote ip))
+(deny network-bind     (local  ip))
+(deny network-inbound  (local  ip))
 
-;; DNS. Nothing resolves without the system resolver.
+;; No listeners: nothing can bind a TCP or UDP port, so no local dev server and
+;; no raw DNS client. A loopback re-allow (local ip "localhost:*") does NOT
+;; narrow this - measured, it matches every bind address including 0.0.0.0, so
+;; it silently reopens the deny. If a listener is needed, drop the bind deny.
+;; DNS. Hostname lookups go through the system resolver socket, which needs no
+;; UDP egress. Raw DNS tools (dig, host) open their own UDP socket, so they
+;; stay denied; allowing (remote udp "*:53") would reopen them at the cost of
+;; direct-IP DNS to any host.
 (allow network-outbound (literal "/private/var/run/mDNSResponder"))
 
-;; TLS egress on port 443 only. Plaintext ports, ICMP, QUIC, and
-;; direct-IP DNS bypasses (dig @8.8.8.8) stay denied.
+;; TLS egress on port 443 only. Plaintext ports, ICMP, and QUIC stay denied.
 (allow network-outbound (remote tcp "*:443"))
