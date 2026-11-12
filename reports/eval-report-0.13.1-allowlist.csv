@@ -1,0 +1,12 @@
+check,result,observed
+"safehouse --append-profile=(allow network-outbound (remote ip ""captive.apple.com:443"")) -- true",PASS,"safehouse: Could not check for unreadable PATH directories inside the sandbox sandbox-exec: host must be * or localhost in network address  "
+"safehouse --append-profile=(allow network-outbound (remote ip ""17.253.254.8:443"")) -- true",PASS,"safehouse: Could not check for unreadable PATH directories inside the sandbox sandbox-exec: host must be * or localhost in network address  "
+"safehouse --append-profile=(allow network-outbound (remote ip ""17.253.0.0/16:443"")) -- true",PASS,"safehouse: Could not check for unreadable PATH directories inside the sandbox sandbox-exec: host must be * or localhost in network address  "
+"HTTPS_PROXY=http://127.0.0.1:18090 curl -sS --max-time 12 -o /dev/null -w '%{http_code}\n' https://captive.apple.com",PASS,"200"
+"HTTPS_PROXY=http://127.0.0.1:18090 curl -sS --max-time 12 -o /dev/null -w '%{http_code}\n' https://opencode.ai",PASS,"curl: (56) CONNECT tunnel failed, response 403 000"
+"curl -sS --max-time 8 -o /dev/null -w '%{http_code}\n' https://captive.apple.com",PASS,"curl: (7) Failed to connect to captive.apple.com port 443 after 2 ms: Couldn't connect to server 000"
+"HTTPS_PROXY=http://127.0.0.1:18090 python3 -c 'import urllib.request;print(urllib.request.urlopen(""https://captive.apple.com"",timeout=10).status)'",PASS,"200"
+"python3 -c 'import socket;print(socket.gethostbyname(""captive.apple.com""))'",PASS,"17.253.254.9"
+"nc -z -G 3 127.0.0.1 18090 && echo OPEN",PASS,"Connection to 127.0.0.1 port 18090 [tcp/*] succeeded! OPEN"
+"nc -z -G 3 127.0.0.1 18091 && echo OPEN",PASS,"(no output)"
+"nc -z -G 3 github.com 22 && echo OPEN",PASS,"(no output)"
