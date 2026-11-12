@@ -29,7 +29,11 @@ is representative.
 6. Checks host-side escape artifacts: files written outside the sandbox, a
    changed crontab, a `defaults` write that landed, key bytes inside "stolen"
    copies.
-7. Prints `PASS/FAIL` per probe and a final verdict. Exit code `0` means every
+7. Runs the hostname allowlist stage (`tools/allowlist-eval.sh`, `make
+   allowlist`) separately: it records the host/IP/CIDR rule forms Seatbelt
+   rejects, then measures a loopback CONNECT proxy as the only shape that
+   filters by hostname.
+8. Prints `PASS/FAIL` per probe and a final verdict. Exit code `0` means every
    claim held.
 
 ## Usage
@@ -39,6 +43,7 @@ make eval                     # run the eval, keep the rig for inspection
 make eval version=0.14.0      # label the run with a version
 make eval-clean               # run, then move the rig into rig/.trash/
 make report version=0.13.0    # regenerate the CSV report from rig/results.txt
+make allowlist                # hostname allowlist stage (loopback proxy)
 make check                    # syntax-check the shell scripts
 ```
 
@@ -66,6 +71,7 @@ the command that ran, the result, and what was observed.
 - macOS
 - [Agent Safehouse](https://agent-safehouse.dev/) on PATH
   (`brew install eugene1g/safehouse/agent-safehouse`)
+- `python3` for the allowlist stage, and a free port 18090 for its proxy
 
 No API keys, no agent install, no network credentials.
 
@@ -84,23 +90,57 @@ behavior, or a broken probe. The failure line shows which, with the observed
 output.
 
 Known info-level surfaces the eval records as `any`: `nvram`, `dscacheutil`
-user records, `~/.ssh` file name listing, and `~/.gitconfig` / `~/.ssh/config`
-contents. These are reachable by design in Safehouse 0.13.0 and none of them
-carries a credential.
+user records, `~/.ssh` file name listing, `~/.gitconfig` / `~/.ssh/config`
+contents, keychain search errors, and the sampled system trees that fail or
+succeed per path. None of them carries a credential.
 
 ### Network posture (as measured)
 
-Seatbelt cannot match hostnames, and Safehouse 0.13.0 emits a blanket
-`(allow network-outbound (remote ip))` that dominates every rule appended after
-it, so the override's network rules compile but do not restrict egress. The
-eval verifies this by experiment and records the actual posture as `any`:
-outbound TCP connects on any port (`nc github.com:22` succeeds), direct-IP DNS
-(`dig @8.8.8.8` answers), and ICMP (`ping`) all work from inside the sandbox.
-TLS 443 works (OpenCode and websearch run fine). The override carries
-correctly-shaped rules (`(deny network* (remote ip "*:*"))`,
-`(allow network-outbound (remote tcp "*:443"))`) that will start restricting
-egress if Safehouse scopes its grant; re-run the eval after upgrading to catch
-the flip.
+Egress is closed with one rule per operation, appended after Safehouse's
+generated `(allow network-outbound (remote ip))`:
+
+```
+(deny network-outbound (remote ip))
+(deny network-bind     (local  ip))
+(deny network-inbound  (local  ip))
+```
+
+Measured inside `safehouse bash` on 0.13.0 and 0.13.1: TCP 22, plaintext HTTP
+80, UDP 443, ICMP, and direct-IP DNS all fail; TCP 443 works, so OpenCode and
+websearch run; hostname lookups work through the system resolver socket
+(mDNSResponder). Raw DNS clients (`dig`, `host`) fail because they bind their
+own UDP socket, and nothing can listen on a port, local dev servers included.
+A `(local ip "localhost:*")` re-allow matches every bind address, including
+`0.0.0.0`, so it re-opens bind when added.
+
+TLS also depends on chain building: a certificate whose root is missing from
+`/etc/ssl/cert.pem` fails verification inside the sandbox because the system
+trust store is unreachable, so the any-HTTPS-host probe uses
+`captive.apple.com` rather than `example.com`.
+
+### Hostname allowlists (as measured)
+
+A network rule accepts `*` or `localhost` as the host. A hostname, literal IP,
+or CIDR is rejected when the policy renders:
+
+```
+sandbox-exec: host must be * or localhost in network address
+```
+
+`make allowlist` records those three forms, then measures the shape that does
+filter by hostname: close egress, allow only
+`(allow network-outbound (remote ip "localhost:18090"))`, and run
+`tools/proxy-allowlist.py` on that loopback port. The proxy accepts CONNECT for
+the hostnames in its list and answers 403 for everything else. Measured with
+`captive.apple.com` allowlisted: curl and python `urllib` through the proxy
+return 200, `opencode.ai` gets `CONNECT tunnel failed, response 403`, direct
+egress is refused, the resolver still answers, and connections to any other
+loopback port are refused. The hostname decision happens in the proxy, not in
+the sandbox.
+
+The stage writes `rig/allowlist/results.txt` and
+`reports/eval-report-<version>-allowlist.csv`. Its proxy log records one line
+per decision (`allow captive.apple.com:443`, `deny opencode.ai:443`).
 
 ## License
 
