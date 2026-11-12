@@ -5,5 +5,8 @@ rig/
 # Local deletion target: files move here instead of being removed
 .trash/
 
+# Bytecode from `make check` compiling tools/proxy-allowlist.py
+__pycache__/
+
 # macOS
 .DS_Store

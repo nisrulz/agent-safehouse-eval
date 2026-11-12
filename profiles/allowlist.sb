@@ -1,0 +1,15 @@
+;; Hostname allowlist stage. Seatbelt accepts only * or localhost as a host in
+;; a network rule, so no hostname can be named here. Everything is denied and
+;; the single reachable endpoint is the loopback proxy on 18090, which decides
+;; which hostnames a sandboxed process may tunnel to.
+;; Pairs with tools/proxy-allowlist.py and tools/allowlist-eval.sh.
+(deny network-outbound (remote ip))
+(deny network-bind     (local  ip))
+(deny network-inbound  (local  ip))
+
+;; Resolver socket, so hostnames still resolve inside the sandbox.
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+
+;; The proxy only. The port matters: measured, a listener on any other
+;; loopback port stays closed.
+(allow network-outbound (remote ip "localhost:18090"))
