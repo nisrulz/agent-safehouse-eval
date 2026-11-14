@@ -1,0 +1,33 @@
+# Model API, OpenCode Go. The key travels through the environment.
+opencode.ai
+
+# Websearch goes through the Exa MCP endpoint.
+mcp.exa.ai
+
+# Git hosting: clone, push, and the smart HTTP protocol.
+github.com
+
+# GitHub API: repo metadata, issues, releases.
+api.github.com
+
+# Raw file reads from a repo branch.
+raw.githubusercontent.com
+
+# Source archive downloads: github.com/.../archive redirects here.
+codeload.github.com
+
+# Release asset downloads: github.com/.../releases/download redirects here.
+release-assets.githubusercontent.com
+
+# npm registry: installs and tarballs.
+registry.npmjs.org
+
+# Yarn registry: same tarballs, yarn's default host.
+registry.yarnpkg.com
+
+# PyPI index: pip and uv resolve package names here.
+pypi.org
+
+# PyPI download CDN: pip and uv fetch wheels from it, and no browser
+# ever opens it directly.
+files.pythonhosted.org

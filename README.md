@@ -21,7 +21,7 @@ is representative.
    osascript, dd, xxd, ...), copy-out escapes (cp, dd, ditto, tar, rsync, mv),
    symlink and hardlink tricks, path traversal, IPC to keychain/launchd/logd/
    Spotlight, network probes, and grant checks that must keep working.
-   Names read as the action performed, e.g. `python3 reads ssh key` or
+   Names read as the action performed, e.g. `uv python reads ssh key` or
    `cat /etc/master.passwd`.
 5. Spot-checks system trees (`tools/gen-spot.sh`): two sampled paths per tree,
    expectation, and operation, instead of a full walk. The trees' policy is
@@ -45,6 +45,12 @@ make eval-clean               # run, then move the rig into rig/.trash/
 make report version=0.13.0    # regenerate the CSV report from rig/results.txt
 make allowlist                # hostname allowlist stage (loopback proxy)
 make check                    # syntax-check the shell scripts
+```
+
+Run the proxy on its own, for real work:
+
+```bash
+uv run tools/proxy-allowlist.py --port 18090 --allow-file allowlist.txt
 ```
 
 Results land in `rig/results.txt` and a CSV report in
@@ -71,7 +77,8 @@ the command that ran, the result, and what was observed.
 - macOS
 - [Agent Safehouse](https://agent-safehouse.dev/) on PATH
   (`brew install eugene1g/safehouse/agent-safehouse`)
-- `python3` for the allowlist stage, and a free port 18090 for its proxy
+- `uv`, which runs every Python script here, and a free port 18090 for the
+  proxy
 
 No API keys, no agent install, no network credentials.
 
@@ -138,9 +145,34 @@ egress is refused, the resolver still answers, and connections to any other
 loopback port are refused. The hostname decision happens in the proxy, not in
 the sandbox.
 
+The stage then restarts the proxy on `allowlist.txt` and probes each host in
+it from inside the sandbox, plus the unlisted-host deny and the payload paths
+that matter: pip index to wheel, a GitHub release asset, an MCP `initialize`,
+and `git ls-remote`.
+
 The stage writes `rig/allowlist/results.txt` and
-`reports/eval-report-<version>-allowlist.csv`. Its proxy log records one line
+`reports/eval-report-<version>-allowlist.csv`. Its proxy logs
+(`rig/allowlist/proxy.log`, `rig/allowlist/proxy-hosts.log`) record one line
 per decision (`allow captive.apple.com:443`, `deny opencode.ai:443`).
+
+### Running the proxy for real work
+
+`allowlist.txt` at the repo root is the list for actual agent work: model API,
+websearch, git hosting, package registries.
+
+```bash
+uv run tools/proxy-allowlist.py --port 18090 --allow-file allowlist.txt
+```
+
+The file holds one hostname per line; `#` starts a comment and blank lines are
+ignored. Matching is exact, so `github.com` does not cover `gist.github.com`.
+A line that is not a bare hostname (scheme, path, port, wildcard) is an error
+rather than a rule that silently allows nothing. `--allow h1,h2` adds hosts on
+the command line.
+
+The proxy also refuses an upstream that resolves to a loopback, private, or
+link-local address, so an allowlisted name cannot be pointed at host-local
+services; `--allow-private` overrides that when you mean it.
 
 ## License
 

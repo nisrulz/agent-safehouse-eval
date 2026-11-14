@@ -26,4 +26,4 @@ check:
 	bash -n tools/gen-spot.sh
 	bash -n tools/gen-report.sh
 	bash -n tools/allowlist-eval.sh
-	python3 -m py_compile tools/proxy-allowlist.py
+	uv run python -m py_compile tools/proxy-allowlist.py
