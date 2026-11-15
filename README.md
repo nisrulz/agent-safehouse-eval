@@ -153,7 +153,14 @@ and `git ls-remote`.
 The stage writes `rig/allowlist/results.txt` and
 `reports/eval-report-<version>-allowlist.csv`. Its proxy logs
 (`rig/allowlist/proxy.log`, `rig/allowlist/proxy-hosts.log`) record one line
-per decision (`allow captive.apple.com:443`, `deny opencode.ai:443`).
+per decision, with the time, an ASCII status tag, the host and port, and a
+repeat count:
+
+```
+[10:22:04] [ok] captive.apple.com:443
+[10:22:06] [no] opencode.ai:443   host not in allowlist
+[10:22:09] [ok] github.com:443    #3
+```
 
 ### Running the proxy for real work
 
@@ -163,6 +170,11 @@ websearch, git hosting, package registries.
 ```bash
 uv run tools/proxy-allowlist.py --port 18090 --allow-file allowlist.txt
 ```
+
+The proxy prints its listen address and the allowed hostnames at start, one
+line per request as traffic arrives, and a count of allowed, denied, and failed
+connections when it stops. Colour and bold are used on a terminal only; set
+`NO_COLOR=1` to turn them off.
 
 The file holds one hostname per line; `#` starts a comment and blank lines are
 ignored. Matching is exact, so `github.com` does not cover `gist.github.com`.
